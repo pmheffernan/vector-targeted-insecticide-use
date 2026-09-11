@@ -1,0 +1,1479 @@
+---
+title: "2026_insecticideusage_figures_by_type"
+output: html_document
+date: "2026-03-27"
+---
+
+```{r}
+library(tidyverse)
+library(DHARMa)
+library(performance)
+library(lme4)
+library(sjPlot)
+library(car)
+library(glmmTMB)
+library(ggeffects)
+library(RColorBrewer)
+library(cowplot)
+```
+
+
+```{r}
+df_itn <- read.csv("2026_insecticideanalyses_upload_csv.csv")%>% 
+  rename(Malaria = Malaria_rate, Dengue = Dengue_rate) %>% 
+  filter(mean_temp > -200)  %>% 
+  dplyr::select(Country, newITN, sum_RS, sum_SS, sum_LA, Dengue, Malaria, mean_temp, mean_precip, hdi, Pop, TotalPop) %>% 
+  drop_na()
+
+df_itn$Pop = as.numeric(df_itn$Pop)
+
+df_itn <- df_itn %>% 
+  drop_na()
+
+df_itn$sum_2 <- df_itn$newITN 
+
+df_itn$Country = as.factor(df_itn$Country)
+df_itn$Y = log(df_itn$sum_2 + 0.001)
+
+df_itn$Y2 = log((df_itn$sum_2+0.001)/df_itn$TotalPop)
+
+df_itn$Malaria <- log1p(df_itn$Malaria)
+df_itn$Dengue <- log1p(df_itn$Dengue)
+df_itn$Pop <- log1p(df_itn$Pop)
+df_itn$mean_precip <- log1p(df_itn$mean_precip)
+df_itn$sum_SS <- log1p(df_itn$sum_SS/df_itn$TotalPop)
+df_itn$sum_RS <- log1p(df_itn$sum_RS/df_itn$TotalPop)
+df_itn$sum_LA <- log1p(df_itn$sum_LA/df_itn$TotalPop)
+
+df_itn$logTotalPop <- log(df_itn$TotalPop)
+
+df_itn <- data.frame(df_itn)
+
+df_itn$ITN <- as.integer(df_itn$sum_2 > 0)
+
+df_itn2 <- df_itn %>% 
+  filter(ITN == 1) %>% 
+  droplevels()
+```
+
+```{r}
+itn <- glmmTMB(ITN ~ scale(Malaria) + scale(Dengue) + scale(hdi) + scale(Pop) + scale(Malaria)*scale(mean_temp) + scale(Malaria)*scale(hdi) + 
+    scale(Malaria)*scale(Pop) + scale(Malaria)*scale(sum_SS) + scale(Malaria)*scale(sum_RS) + scale(Dengue)*scale(mean_temp) + 
+    scale(Dengue)*scale(mean_precip) + scale(Dengue)*scale(sum_RS) + scale(Dengue)*scale(sum_LA) + scale(mean_temp)*scale(hdi) + 
+    scale(mean_temp)*scale(sum_SS) + scale(mean_temp)*scale(sum_RS) + scale(mean_precip)*scale(hdi) + scale(Pop)*scale(sum_SS) + 
+    scale(Pop)*scale(sum_RS) + scale(Pop)*scale(sum_LA) + scale(sum_SS)*scale(sum_RS) + (1 | Country), data = df_itn, family = binomial)
+
+itn2 <- glmmTMB(Y ~ scale(hdi) + scale(sum_RS) + scale(Malaria)*scale(hdi) + scale(Malaria)*scale(sum_RS) + scale(Dengue)*scale(hdi) + 
+    scale(mean_temp)*scale(sum_RS) + scale(mean_precip)*scale(sum_RS) + scale(hdi)*scale(Pop) + scale(sum_SS)*scale(sum_RS) + 
+    scale(sum_RS)*scale(sum_LA)  + (1 | Country) + offset(logTotalPop), data = df_itn2, family = gaussian)
+
+
+```
+
+RS
+```{r}
+df_rs <- read.csv("2026_insecticideanalyses_upload_csv.csv")%>% 
+  rename(Malaria = Malaria_rate, Dengue = Dengue_rate) %>% 
+  filter(mean_temp > -200)  %>% 
+  dplyr::select(Country, newITN, sum_RS, sum_SS, sum_LA, Dengue, Malaria, mean_temp, mean_precip, hdi, Pop, TotalPop) %>% 
+  drop_na()
+df_rs$sum_2 <- df_rs$sum_RS
+
+df_rs$Country = as.factor(df_rs$Country)
+df_rs$Y = log(df_rs$sum_2 + 0.001)
+
+
+df_rs$Y2 = log((df_rs$sum_2+0.001)/df_rs$TotalPop)
+
+df_rs$Country = as.factor(df_rs$Country)
+
+df_rs$Malaria <- log1p(df_rs$Malaria)
+df_rs$Dengue <- log1p(df_rs$Dengue)
+df_rs$Pop <- log1p(df_rs$Pop)
+df_rs$mean_precip <- log1p(df_rs$mean_precip)
+df_rs$sum_SS <- log1p(df_rs$sum_SS/df_rs$TotalPop)
+df_rs$newITN <- log1p(df_rs$newITN/df_rs$TotalPop)
+df_rs$sum_LA <- log1p(df_rs$sum_LA/df_rs$TotalPop)
+
+df_rs$logTotalPop <- log(df_rs$TotalPop)
+
+df_rs <- data.frame(df_rs)
+
+df_rs$RS <- as.integer(df_rs$sum_2 > 0)
+
+df_rs2 <- df_rs %>% 
+  filter(RS == 1) %>% 
+  droplevels()
+
+```
+
+```{r}
+rs <- glmmTMB(RS ~ scale(Malaria) + scale(Dengue) + scale(hdi) + scale(sum_SS) + scale(Malaria)*scale(mean_precip) + 
+    scale(Malaria)*scale(hdi) + scale(Malaria)*scale(sum_SS) + scale(Dengue)*scale(sum_SS) + scale(mean_temp)*scale(sum_LA) + 
+    scale(mean_precip)*scale(hdi) + scale(mean_precip)*scale(newITN) + scale(hdi)*scale(Pop) + scale(hdi)*scale(sum_SS) + 
+    scale(hdi)*scale(newITN) + scale(sum_SS)*scale(newITN) + scale(newITN)*scale(sum_LA) + (1|Country),  data = df_rs, family = binomial)
+
+rs2 <- glmmTMB(Y ~ scale(hdi) + scale(Malaria)*scale(hdi) + scale(Malaria)*scale(sum_LA) + scale(mean_precip)*scale(hdi) + scale(Pop)*scale(newITN) + 
+    scale(newITN)*scale(sum_LA)  + (1|Country) + offset(logTotalPop), data = df_rs2, family = gaussian)
+
+```
+
+SS
+```{r}
+df_ss <- read.csv("2026_insecticideanalyses_upload_csv.csv")%>% 
+  rename(Malaria = Malaria_rate, Dengue = Dengue_rate) %>% 
+  filter(mean_temp > -200)  %>% 
+  dplyr::select(Country, newITN, sum_RS, sum_SS, sum_LA, Dengue, Malaria, mean_temp, mean_precip, hdi, Pop, TotalPop) %>% 
+  drop_na()
+
+df_ss$sum_2 <- df_ss$sum_SS 
+
+df_ss$Y = log(df_ss$sum_2 + 0.001)
+
+
+df_ss$Y2 = log((df_ss$sum_2+0.001)/df_ss$TotalPop)
+
+df_ss$Country = as.factor(df_ss$Country)
+
+df_ss$Malaria <- log1p(df_ss$Malaria)
+df_ss$Dengue <- log1p(df_ss$Dengue)
+df_ss$Pop <- log1p(df_ss$Pop)
+df_ss$mean_precip <- log1p(df_ss$mean_precip)
+df_ss$newITN <- log1p(df_ss$newITN/df_ss$TotalPop)
+df_ss$sum_RS <- log1p(df_ss$sum_RS/df_ss$TotalPop)
+df_ss$sum_LA <- log1p(df_ss$sum_LA/df_ss$TotalPop)
+
+df_ss$logTotalPop <- log(df_ss$TotalPop)
+
+df_ss <- data.frame(df_ss)
+
+df_ss$SS <- as.integer(df_ss$sum_2 > 0)
+
+df_ss2 <- df_ss %>% 
+  filter(SS == 1) %>% 
+  droplevels()
+```
+
+```{r}
+ss <- glmmTMB(SS ~ scale(Malaria) + scale(Dengue) + scale(hdi) + scale(Pop) + scale(sum_RS) + scale(Malaria)*scale(Dengue) + 
+    scale(Malaria)*scale(mean_temp) + scale(Malaria)*scale(mean_precip) + scale(Malaria)*scale(hdi) + scale(Malaria)*scale(sum_RS) + 
+    scale(Dengue)*scale(mean_precip) + scale(Dengue)*scale(Pop) + scale(Dengue)*scale(sum_RS) + scale(Dengue)*scale(sum_LA) + 
+    scale(mean_temp)*scale(hdi) + scale(mean_temp)*scale(Pop) + scale(mean_temp)*scale(sum_RS) + scale(mean_temp)*scale(newITN) + 
+    scale(mean_precip)*scale(hdi) + scale(mean_precip)*scale(sum_RS) + scale(hdi)*scale(Pop) + scale(hdi)*scale(sum_RS) + 
+    scale(hdi)*scale(newITN) + scale(hdi)*scale(sum_LA) + scale(Pop)*scale(sum_RS) + scale(Pop)*scale(newITN) + scale(Pop)*scale(sum_LA) + 
+    scale(sum_RS)*scale(newITN) + scale(sum_RS)*scale(sum_LA) + scale(newITN)*scale(sum_LA) + (1|Country), data = df_ss, family = binomial)
+
+
+ss2 <- glmmTMB(Y ~ scale(Malaria)*scale(Dengue) + scale(Dengue)*scale(hdi) + scale(mean_precip)*scale(sum_LA) + scale(Pop)*scale(sum_LA) + (1 | Country) + offset(logTotalPop), data = df_ss2, family = gaussian)
+
+
+```
+
+LA
+```{r}
+df_la <- read.csv("2026_insecticideanalyses_upload_csv.csv")%>% 
+  rename(Malaria = Malaria_rate, Dengue = Dengue_rate) %>% 
+  filter(mean_temp > -200)  %>% 
+  dplyr::select(Country, newITN, sum_RS, sum_SS, sum_LA, Dengue, Malaria, mean_temp, mean_precip, hdi, Pop, TotalPop) %>% 
+  drop_na()
+
+df_la$sum_2 <- df_la$sum_LA 
+
+df_la$Y = log(df_la$sum_2 + 0.001)
+
+
+df_la$Y2 = log((df_la$sum_2+0.001)/df_la$TotalPop)
+
+df_la$Country = as.factor(df_la$Country)
+
+df_la$Malaria <- log1p(df_la$Malaria)
+df_la$Dengue <- log1p(df_la$Dengue)
+df_la$Pop <- log1p(df_la$Pop)
+df_la$mean_precip <- log1p(df_la$mean_precip)
+df_la$sum_SS <- log1p(df_la$sum_SS/df_la$TotalPop)
+df_la$newITN <- log1p(df_la$newITN/df_la$TotalPop)
+df_la$sum_RS <- log1p(df_la$sum_RS/df_la$TotalPop)
+
+df_la$logTotalPop <- log(df_la$TotalPop)
+
+df_la <- data.frame(df_la)
+
+
+
+df_la$LA <- as.integer(df_la$sum_2 > 0)
+
+df_la2 <- df_la %>% 
+  filter(LA == 1) %>% 
+  droplevels()
+```
+
+```{r}
+la <- glmmTMB(LA ~ scale(Malaria) + scale(Dengue) + scale(mean_temp) + scale(hdi) + scale(sum_RS) + scale(Malaria)*scale(hdi) + 
+    scale(Dengue)*scale(hdi) + scale(Dengue)*scale(newITN) + scale(mean_temp)*scale(sum_SS) + scale(hdi)*scale(sum_RS) + 
+    scale(hdi)*scale(newITN) + (1 | Country), family = binomial, data = df_la)
+
+la2 <- glmmTMB(Y ~ scale(Dengue) + scale(Malaria)*scale(sum_SS) + scale(hdi)*scale(sum_RS) + 
+    (1 | Country) + offset(logTotalPop), family = gaussian, data = df_la2)
+
+```
+
+
+
+These figures are grouped by response type.
+
+First, ITN salient patterns
+```{r}
+car::Anova(itn, type = "III")
+car::Anova(itn2, type = "III")
+```
+
+```{r}
+#ITN binomial
+panel2 <- plot_model(itn, type = "pred",  terms = c("Malaria [all]", "mean_temp"), bias_correction = FALSE)
+panel2 <- as.data.frame(panel2$data) %>% 
+  rename("Malaria" = "x")
+
+panel_a_2 <- ggplot(data = panel2, aes(x = Malaria, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1, digits = 2))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "AnBD Incidence (per 100k people)",
+    y = "Likelihood of ITN Use",
+    color = "Temperature\n(\u00B0C)",
+    fill = "Temperature\n(\u00B0C)"
+  )
+
+panel3 <- plot_model(itn, type = "pred",  terms = c("Pop [all]"), bias_correction = FALSE)
+panel3 <- as.data.frame(panel3$data) %>% 
+  rename("Pop" = "x")
+
+panel_a_3 <- ggplot(data = panel3, aes(x = Pop, y = predicted))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_x_continuous(labels = function(x) round(exp(x) - 1))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "Population Density",
+    y = "Likelihood of ITN Use"
+  )
+
+panel4 <- plot_model(itn, type = "pred",  terms = c("hdi [all]", "mean_temp"), bias_correction = FALSE)
+panel4 <- as.data.frame(panel4$data) %>% 
+  rename("hdi" = "x")
+
+panel_a_4 <- ggplot(data = panel4, aes(x = hdi, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  #scale_x_continuous(labels = function(x) round(exp(x) - 1, digits = 2))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "HDI",
+    y = "Likelihood of ITN Use",
+    color = "Temperature\n(\u00B0C)",
+    fill = "Temperature\n(\u00B0C)"
+  )
+
+panel5 <- plot_model(itn, type = "pred",  terms = c("mean_precip [all]", "Dengue"), bias_correction = FALSE)
+panel5 <- as.data.frame(panel5$data) %>% 
+  rename("mean_precip" = "x")
+
+panel_a_5 <- ggplot(data = panel5, aes(x = mean_precip, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1, digits = 3))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "Precipitation (m)",
+    y = "Likelihood of ITN Use",
+    color = "AeBD\nIncidence\n(per 100k people)",
+    fill = "AeBD\nIncidence\n(per 100k people)"
+  )
+
+
+#ITN continuous 
+panel6 <- plot_model(itn2, type = "pred", terms = c("hdi [all]", "Malaria"))
+panel6 <- as.data.frame(panel6$data) %>% 
+  rename("hdi" = "x")%>%
+  mutate(predicted = if_else(predicted < 0, 0, predicted)) %>% 
+  mutate(conf.low = if_else(conf.low < 0, 0, conf.low))  
+
+panel_a_6 <- ggplot(data = panel6, aes(x = hdi, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_y_continuous(n.breaks = 6,
+  labels = function(x) {
+    val <- round(((exp(x) - .001) / 1000), 1)
+    paste0(val, "k")
+  })+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  #ylim(c(0, 15))+
+  labs(
+    x = "HDI",
+    y = expression(paste("ITN Use (SSC ", km^2, ")")),
+    color = "AnBD\nIncidence\n(per 100k people)",
+    fill = "AnBD\nIncidence\n(per 100k people)"
+  )
+
+panel7 <- plot_model(itn2, type = "pred", terms = c("hdi [all]", "Dengue"))
+panel7 <- as.data.frame(panel7$data) %>% 
+  rename("hdi" = "x")%>%
+  mutate(predicted = if_else(predicted < 0, 0, predicted)) %>% 
+  mutate(conf.low = if_else(conf.low < 0, 0, conf.low))  
+
+panel_a_7 <- ggplot(data = panel7, aes(x = hdi, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_y_continuous(n.breaks = 6,
+  labels = function(x) {
+    val <- round(((exp(x) - .001) / 1000), 1)
+    paste0(val, "k")
+  })+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  #ylim(c(0, 15))+
+  labs(
+    x = "HDI",
+    y = expression(paste("ITN Use (SSC ", km^2, ")")),
+    color = "AeBD\nIncidence\n(per 100k people)",
+    fill = "AeBD\nIncidence\n(per 100k people)"
+  )
+
+panel8 <- plot_model(itn2, type = "pred", terms = c("mean_temp [all]", "sum_RS"))
+panel8 <- as.data.frame(panel8$data) %>% 
+  rename("mean_temp" = "x")%>%
+  mutate(predicted = if_else(predicted < 0, 0, predicted)) %>% 
+  mutate(conf.low = if_else(conf.low < 0, 0, conf.low))  
+
+panel_a_8 <- ggplot(data = panel8, aes(x = mean_temp, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_y_continuous(n.breaks = 6,
+  labels = function(x) {
+    val <- round(((exp(x) - .001) / 1000), 1)
+    paste0(val, "k")
+  })+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  #ylim(c(0, 15))+
+  labs(
+    x = "Temperature (\u00B0C)",
+    y = expression(paste("ITN Use (SSC ", km^2, ")")),
+    color = expression(atop(paste("RS Use (SSC ", km^2), "per person)")),
+    fill = expression(atop(paste("RS Use (SSC ", km^2), "per person)"))
+  )
+
+panel9 <- plot_model(itn2, type = "pred", terms = c("mean_precip [all]", "sum_RS"))
+panel9 <- as.data.frame(panel9$data) %>% 
+  rename("mean_precip" = "x")%>%
+  mutate(predicted = if_else(predicted < 0, 0, predicted)) %>% 
+  mutate(conf.low = if_else(conf.low < 0, 0, conf.low))  
+
+panel_a_9 <- ggplot(data = panel9, aes(x = mean_precip, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1, digits = 3))+
+  scale_y_continuous(n.breaks = 6,
+  labels = function(x) {
+    val <- round(((exp(x) - .001) / 1000), 1)
+    paste0(val, "k")
+  })+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  #ylim(c(0, 15))+
+  labs(
+    x = "Precipitation (m)",
+    y = expression(paste("ITN Use (SSC ", km^2, ")")),
+    color = expression(atop(paste("RS Use (SSC ", km^2), "per person)")),
+    fill = expression(atop(paste("RS Use (SSC ", km^2), "per person)"))
+  )
+
+panel <- cowplot::plot_grid(panel_a_4, panel_a_5, panel_a_2, panel_a_3, panel_a_6, panel_a_7,
+                            panel_a_8, panel_a_9, ncol =3, align = 'hv', 
+                            labels = "AUTO")
+
+cowplot::ggsave2(
+  filename = "2026_ITN_salient.png",
+  plot = panel,
+  width = 16,
+  height = 10,
+  units = "in",
+  dpi = 1200
+)
+```
+
+Second, ITN nonsalient patterns
+```{r}
+#ITN binomial
+panel2 <- plot_model(itn, type = "pred",  terms = c("Pop [all]", "sum_SS"), bias_correction = FALSE)
+panel2 <- as.data.frame(panel2$data) %>% 
+  rename("Pop" = "x")
+
+panel_a_2 <- ggplot(data = panel2, aes(x = Pop, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "Population Density",
+    y = "Likelihood of ITN Use",
+    color = expression(atop(paste("SS Use (SSC ", km^2), "per person)")),
+    fill = expression(atop(paste("SS Use (SSC ", km^2), "per person)"))
+  )
+
+
+panel1 <- plot_model(itn, type = "pred",  terms = c("Pop [all]", "sum_LA"), bias_correction = FALSE)
+panel1 <- as.data.frame(panel1$data) %>% 
+  rename("Pop" = "x")
+
+panel_a_1 <- ggplot(data = panel1, aes(x = Pop, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "Population Density",
+    y = "Likelihood of ITN Use",
+    color = expression(atop(paste("LA Use (SSC ", km^2), "per person)")),
+    fill = expression(atop(paste("LA Use (SSC ", km^2), "per person)"))
+  )
+
+panel3 <- plot_model(itn, type = "pred",  terms = c("Pop [all]", "Malaria"), bias_correction = FALSE)
+panel3 <- as.data.frame(panel3$data) %>% 
+  rename("Pop" = "x")
+
+panel_a_3 <- ggplot(data = panel3, aes(x = Pop, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "Population Density",
+    y = "Likelihood of ITN Use",
+    color = "AnBD\nIncidence\n(per 100k\npeople)",
+    fill = "AnBD\nIncidence\n(per 100k\npeople)")
+
+
+panel <- cowplot::plot_grid(panel_a_2, panel_a_1, panel_a_3,  ncol =3, align = 'hv', 
+                            labels = "AUTO")
+
+cowplot::ggsave2(
+  filename = "2026_ITN_nonsalient.png",
+  plot = panel,
+  width = 16,
+  height = 4,
+  units = "in",
+  dpi = 1200
+)
+```
+
+
+Now, RS
+```{r}
+Anova(rs, type = "III")
+Anova(rs2, type = "III")
+```
+
+
+First, RS salient patterns
+```{r}
+#RS binomial
+panel1 <- plot_model(rs, type = "pred",  terms = c("Malaria [all]", "hdi"), bias_correction = FALSE)
+panel1 <- as.data.frame(panel1$data) %>% 
+  rename("Malaria" = "x")
+
+panel_a_1 <- ggplot(data = panel1, aes(x = Malaria, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "AnBD Incidence (per 100k people)",
+    y = "Likelihood of RS Use",
+    color = "HDI",
+    fill = "HDI"
+  )
+
+panel2 <- plot_model(rs, type = "pred",  terms = c("Malaria [all]", "mean_precip"), bias_correction = FALSE)
+panel2 <- as.data.frame(panel2$data) %>% 
+  rename("Malaria" = "x")
+
+panel_a_2 <- ggplot(data = panel2, aes(x = Malaria, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "AnBD Incidence (per 100k people)",
+    y = "Likelihood of RS Use",
+    color = "Precipitation (m)",
+    fill = "Precipitation (m)"
+  )
+
+panel3 <- plot_model(rs, type = "pred",  terms = c("mean_precip [all]", "hdi"), bias_correction = FALSE)
+panel3 <- as.data.frame(panel3$data) %>% 
+  rename("mean_precip" = "x")
+
+panel_a_3 <- ggplot(data = panel3, aes(x = mean_precip, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1, digits = 2))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "Precipitation (m)",
+    y = "Likelihood of RS Use",
+    color = "HDI",
+    fill = "HDI"
+  )
+
+#RS continuous
+panel4 <- plot_model(rs2, type = "pred", terms = c("Malaria", "hdi"))
+panel4 <- as.data.frame(panel4$data) %>% 
+  rename("Malaria" = "x")%>%
+  mutate(predicted = if_else(predicted < 0, 0, predicted)) %>% 
+  mutate(conf.low = if_else(conf.low < 0, 0, conf.low))  
+
+panel_a_4 <- ggplot(data = panel4, aes(x = Malaria, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2",labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2",labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1))+
+  scale_y_continuous(n.breaks = 6,
+  labels = function(x) {
+    val <- round(((exp(x) - .001) / 1000), 1)
+    paste0(val, "k")
+  })+
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  #ylim(c(0, 20))+
+  labs(
+    x = "AnBD Incidence (per 100k people)",
+    y = expression(paste("RS Use (SSC ", km^2, ")")),
+    color = "HDI",
+    fill = "HDI"
+  )
+
+
+
+panel6 <- plot_model(rs2, type = "pred", terms = c("newITN", "Pop"))
+panel6 <- as.data.frame(panel6$data) %>% 
+  rename("newITN" = "x")%>%
+  mutate(predicted = if_else(predicted < 0, 0, predicted)) %>% 
+  mutate(conf.low = if_else(conf.low < 0, 0, conf.low))  
+
+panel_a_6 <- ggplot(data = panel6, aes(x = newITN, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2",labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2",labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1, 3))+
+  scale_y_continuous(n.breaks = 6,
+  labels = function(x) {
+    val <- round(((exp(x) - .001) / 1000), 1)
+    paste0(val, "k")
+  })+
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  #ylim(c(0, 20))+
+  labs(
+    x = expression(paste("ITN Use (SSC ", km^2, " per person)")),
+    y = expression(paste("RS Use (SSC ", km^2, ")")),
+    color = "Population\nDensity",
+    fill = "Population\nDensity"
+  )
+
+
+
+
+
+panel <- cowplot::plot_grid(panel_a_1, panel_a_2, panel_a_3, panel_a_4, panel_a_6,
+                            ncol =3, align = 'hv', 
+                            labels = "AUTO")
+
+cowplot::ggsave2(
+  filename = "2026_RS_salient.png",
+  plot = panel,
+  width = 16,
+  height = 7,
+  units = "in",
+  dpi = 1200
+)
+
+```
+
+
+
+RS nonsalient
+```{r}
+#RS Binomial
+panel1 <- plot_model(rs, type = "pred",  terms = c("mean_precip [all]", "newITN"), bias_correction = FALSE)
+panel1 <- as.data.frame(panel1$data) %>% 
+  rename("mean_precip" = "x")
+
+panel_a_1 <- ggplot(data = panel1, aes(x = mean_precip, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1, digits = 3))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "Precipitation (m)",
+    y = "Likelihood of RS Use",
+    color = expression(atop(paste("ITN Use (SSC ", km^2), "per person)")),
+    fill = expression(atop(paste("ITN Use (SSC ", km^2), "per person)"))
+  )
+
+panel2 <- plot_model(rs, type = "pred",  terms = c("mean_temp [all]"), bias_correction = FALSE)
+panel2 <- as.data.frame(panel2$data) %>% 
+  rename("mean_temp" = "x")
+
+panel_a_2 <- ggplot(data = panel2, aes(x = mean_temp, y = predicted))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "Temperature (\u00B0C)",
+    y = "Likelihood of RS Use"
+  )
+
+
+#RS continuous
+panel4 <- plot_model(rs2, type = "pred", terms = c("Malaria", "sum_LA"))
+panel4 <- as.data.frame(panel4$data) %>% 
+  rename("Malaria" = "x")%>%
+  mutate(predicted = if_else(predicted < 0, 0, predicted)) %>% 
+  mutate(conf.low = if_else(conf.low < 0, 0, conf.low))  
+
+panel_a_4 <- ggplot(data = panel4, aes(x = Malaria, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2",labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2",labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1))+
+  scale_y_continuous(n.breaks = 6,
+  labels = function(x) {
+    val <- round(((exp(x) - .001) / 1000), 1)
+    paste0(val, "k")
+  })+
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  #ylim(c(0, 20))+
+  labs(
+    x = "AnBD Incidence (per 100k people)",
+    y = expression(paste("RS Use (SSC ", km^2, ")")),
+    color = expression(atop(paste("LA Use (SSC ", km^2), "per person)")),
+    fill = expression(atop(paste("LA Use (SSC ", km^2), "per person)"))
+  )
+
+
+
+
+
+panel8 <- plot_model(rs2, type = "pred", terms = c("mean_precip", "hdi"))
+panel8 <- as.data.frame(panel8$data) %>% 
+  rename("mean_precip" = "x")%>%
+  mutate(predicted = if_else(predicted < 0, 0, predicted)) %>% 
+  mutate(conf.low = if_else(conf.low < 0, 0, conf.low))  
+
+panel_a_8 <- ggplot(data = panel8, aes(x = mean_precip, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2",labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2",labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+   scale_x_continuous(labels = function(x) round(exp(x) - 1, digits = 3))+
+  scale_y_continuous(n.breaks = 6,
+  labels = function(x) {
+    val <- round(((exp(x) - .001) / 1000), 1)
+    paste0(val, "k")
+  })+
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  #ylim(c(0, 20))+
+  labs(
+    x = "Precipitation (m)",
+    y = expression(paste("RS Use (SSC ", km^2, ")")),
+    color = "HDI",
+    fill = "HDI"
+  )
+
+
+
+panel <- cowplot::plot_grid(panel_a_1, panel_a_2, panel_a_4, panel_a_8,
+                            ncol =3, align = 'hv', 
+                            labels = "AUTO")
+
+cowplot::ggsave2(
+  filename = "2026_RS_nonsalient.png",
+  plot = panel,
+  width = 16,
+  height = 7,
+  units = "in",
+  dpi = 1200
+)
+
+```
+
+
+Now, SS
+```{r}
+Anova(ss, type = "III")
+Anova(ss2, type = "III")
+```
+
+
+First, SS salient patterns
+```{r}
+#SS binomial
+panel1 <- plot_model(ss, type = "pred",  terms = c("Dengue [all]"), bias_correction = FALSE)
+panel1 <- as.data.frame(panel1$data) %>% 
+  rename("Dengue" = "x")
+
+panel_a_1 <- ggplot(data = panel1, aes(x = Dengue, y = predicted))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_x_continuous(labels = function(x) round(exp(x) - 1))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "AeBD Incidence (per 100k people)",
+    y = "Likelihood of SS Use"
+  )
+
+panel2 <- plot_model(ss, type = "pred",  terms = c("hdi [all]"), bias_correction = FALSE)
+panel2 <- as.data.frame(panel2$data) %>% 
+  rename("hdi" = "x")
+
+panel_a_2 <- ggplot(data = panel2, aes(x = hdi, y = predicted))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  #scale_x_continuous(labels = function(x) round(exp(x) - 1))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "HDI",
+    y = "Likelihood of SS Use"
+  )
+
+panel3 <- plot_model(ss, type = "pred",  terms = c("Malaria [all]"), bias_correction = FALSE)
+panel3 <- as.data.frame(panel3$data) %>% 
+  rename("Malaria" = "x")
+
+panel_a_3 <- ggplot(data = panel3, aes(x = Malaria, y = predicted))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_x_continuous(labels = function(x) round(exp(x) - 1, digits = 3))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "AnBD Incidence (per 100k people)",
+    y = "Likelihood of SS Use"
+  )
+
+panel4 <- plot_model(ss, type = "pred",  terms = c("sum_LA [all]", "sum_RS"), bias_correction = FALSE)
+panel4 <- as.data.frame(panel4$data) %>% 
+  rename("sum_LA" = "x")
+
+panel_a_4 <- ggplot(data = panel4, aes(x = sum_LA, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1, digits = 3))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = expression(paste("LA Use (SSC ", km^2), "per person)"),
+    y = "Likelihood of SS Use",
+    color = expression(atop(paste("RS Use (SSC ", km^2), " per person)")),
+    fill = expression(atop(paste("RS Use (SSC ", km^2), " per person)"))
+  )
+
+panel6 <- plot_model(ss, type = "pred",  terms = c("Pop [all]", "mean_temp"), bias_correction = FALSE)
+panel6 <- as.data.frame(panel6$data) %>% 
+  rename("Pop" = "x")
+
+panel_a_6 <- ggplot(data = panel6, aes(x = Pop, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1, digits = 3))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "Population Density",
+    y = "Likelihood of SS Use",
+    color = "Temperature\n(\u00B0C)",
+    fill = "Temperature\n(\u00B0C)"
+  )
+
+
+#SS Continuous
+panel5 <- plot_model(ss2, type = "pred",  terms = c("sum_LA", "mean_precip"))
+panel5 <- as.data.frame(panel5$data) %>% 
+  rename("sum_LA" = "x")
+
+panel_a_5 <- ggplot(data = panel5, aes(x = sum_LA, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_y_continuous(n.breaks = 6,
+  labels = function(x) {
+    val <- round(((exp(x) - .001) / 1000), 1)
+    paste0(val, "k")
+  })+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1, digits = 3))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = expression(paste("LA Use (SSC ", km^2, " per person)")),
+    y = expression(paste("SS Use (SSC ", km^2, ")")),
+    color = "Precipitation (m)",
+    fill = "Precipitation (m)"
+  )
+
+panel7 <- plot_model(ss2, type = "pred",  terms = c("sum_LA", "Pop"))
+panel7 <- as.data.frame(panel7$data) %>% 
+  rename("sum_LA" = "x")
+
+panel_a_7 <- ggplot(data = panel7, aes(x = sum_LA, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_y_continuous(n.breaks = 6,
+  labels = function(x) {
+    val <- round(((exp(x) - .001) / 1000), 1)
+    paste0(val, "k")
+  })+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1, digits = 3))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = expression(paste("LA Use (SSC ", km^2, " per person)")),
+    y = expression(paste("SS Use (SSC ", km^2, ")")),
+    color = "Population\nDensity",
+    fill = "Population\nDensity"
+  )
+
+panel8 <- plot_model(ss2, type = "pred",  terms = c("Dengue"))
+panel8 <- as.data.frame(panel8$data) %>% 
+  rename("Dengue" = "x")
+
+panel_a_8 <- ggplot(data = panel8, aes(x = Dengue, y = predicted))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_y_continuous(n.breaks = 6,
+  labels = function(x) {
+    val <- round(((exp(x) - .001) / 1000), 1)
+    paste0(val, "k")
+  })+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1, digits = 3))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "AeBD Incidence (per 100k people)",
+    y = expression(paste("SS Use (SSC ", km^2, ")"))
+  )
+
+panel <- cowplot::plot_grid(panel_a_1, panel_a_2, panel_a_3, panel_a_4, panel_a_6, panel_a_8, panel_a_5, panel_a_7, ncol =3, align = 'hv', 
+                            labels = "AUTO")
+
+cowplot::ggsave2(
+  filename = "2026_SS_salient.png",
+  plot = panel,
+  width = 16,
+  height = 10,
+  units = "in",
+  dpi = 1200
+)
+
+```
+
+Nonsalient SS
+```{r}
+panel1 <- plot_model(ss, type = "pred",  terms = c("Dengue [all]", "Malaria"), bias_correction = FALSE)
+panel1 <- as.data.frame(panel1$data) %>% 
+  rename("Dengue" = "x")
+
+panel_a_1 <- ggplot(data = panel1, aes(x = Dengue, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "AeBD Incidence (per 100k people)",
+    y = "Likelihood of SS Use",
+    color = "AnBD\nIncidence\n(per 100k\npeople)",
+    fill = "AnBD\nIncidence\n(per 100k\npeople)"
+  )
+
+panel2 <- plot_model(ss, type = "pred",  terms = c("Dengue [all]", "mean_precip"), bias_correction = FALSE)
+panel2 <- as.data.frame(panel2$data) %>% 
+  rename("Dengue" = "x")
+
+panel_a_2 <- ggplot(data = panel2, aes(x = Dengue, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "AeBD Incidence (per 100k people)",
+    y = "Likelihood of SS Use",
+    color = "Precipitation\n(m)",
+    fill = "Precipitation\n(m)"
+  )
+
+panel3 <- plot_model(ss, type = "pred",  terms = c("Dengue [all]", "Pop"), bias_correction = FALSE)
+panel3 <- as.data.frame(panel3$data) %>% 
+  rename("Dengue" = "x")
+
+panel_a_3 <- ggplot(data = panel3, aes(x = Dengue, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "AeBD Incidence (per 100k people)",
+    y = "Likelihood of SS Use",
+    color = "Population\nDensity",
+    fill = "Population\nDensity"
+  )
+
+panel4 <- plot_model(ss, type = "pred",  terms = c("Dengue [all]", "sum_LA"), bias_correction = FALSE)
+panel4 <- as.data.frame(panel4$data) %>% 
+  rename("Dengue" = "x")
+
+panel_a_4 <- ggplot(data = panel4, aes(x = Dengue, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "AeBD Incidence (per 100k people)",
+    y = "Likelihood of SS Use",
+    color = expression(atop(paste("LA Use (SSC ", km^2), "per person)")),
+    fill = expression(atop(paste("LA Use (SSC ", km^2), "per person)"))
+  )
+
+panel5 <- plot_model(ss, type = "pred",  terms = c("hdi [all]", "sum_LA"), bias_correction = FALSE)
+panel5 <- as.data.frame(panel5$data) %>% 
+  rename("hdi" = "x")
+
+panel_a_5 <- ggplot(data = panel5, aes(x = hdi, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "HDI",
+    y = "Likelihood of SS Use",
+    color = expression(atop(paste("LA Use (SSC ", km^2), "per person)")),
+    fill = expression(atop(paste("LA Use (SSC ", km^2), "per person)"))
+  )
+
+panel6 <- plot_model(ss, type = "pred",  terms = c("hdi [all]", "Malaria"), bias_correction = FALSE)
+panel6 <- as.data.frame(panel6$data) %>% 
+  rename("hdi" = "x")
+
+panel_a_6 <- ggplot(data = panel6, aes(x = hdi, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "HDI",
+    y = "Likelihood of SS Use",
+    color = "AnBD\nIncidence\n(per 100k\npeople)",
+    fill = "AnBD\nIncidence\n(per 100k\npeople)"
+  )
+
+panel7 <- plot_model(ss, type = "pred",  terms = c("mean_temp [all]", "Malaria"), bias_correction = FALSE)
+panel7 <- as.data.frame(panel7$data) %>% 
+  rename("mean_temp" = "x")
+
+panel_a_7 <- ggplot(data = panel7, aes(x = mean_temp, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "Temperature (\u00B0C)",
+    y = "Likelihood of SS Use",
+    color = "AnBD\nIncidence\n(per 100k\npeople)",
+    fill = "AnBD\nIncidence\n(per 100k\npeople)"
+  )
+
+panel8 <- plot_model(ss, type = "pred",  terms = c("sum_RS [all]", "Pop"), bias_correction = FALSE)
+panel8 <- as.data.frame(panel8$data) %>% 
+  rename("sum_RS" = "x")
+
+panel_a_8 <- ggplot(data = panel8, aes(x = sum_RS, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = expression(paste("RS Use (SSC ", km^2), "per person)"),
+    y = "Likelihood of SS Use",
+    color = "Population\nDensity",
+    fill = "Population\nDensity"
+  )
+
+panel9 <- plot_model(ss, type = "pred",  terms = c("sum_RS [all]", "mean_precip"), bias_correction = FALSE)
+panel9 <- as.data.frame(panel9$data) %>% 
+  rename("sum_RS" = "x")
+
+panel_a_9 <- ggplot(data = panel9, aes(x = sum_RS, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = expression(paste("RS Use (SSC ", km^2), "per person)"),
+    y = "Likelihood of SS Use",
+    color = "Precipitation (m)",
+    fill = "Precipitation (m)"
+  )
+
+panel10 <- plot_model(ss, type = "pred",  terms = c("sum_RS [all]", "Malaria"), bias_correction = FALSE)
+panel10 <- as.data.frame(panel10$data) %>% 
+  rename("sum_RS" = "x")
+
+panel_a_10 <- ggplot(data = panel10, aes(x = sum_RS, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = expression(paste("RS Use (SSC ", km^2), "per person)"),
+    y = "Likelihood of SS Use",
+    color = "AnBD\nIncidence\n(per 100k\npeople)",
+    fill = "AnBD\nIncidence\n(per 100k\npeople)"
+  )
+
+panel <- cowplot::plot_grid(panel_a_1, panel_a_2, panel_a_3, panel_a_4,panel_a_5, panel_a_6, panel_a_7, panel_a_8, panel_a_9, panel_a_10, ncol =3, align = 'hv', 
+                            labels = "AUTO")
+
+cowplot::ggsave2(
+  filename = "2026_SS_nonsalient.png",
+  plot = panel,
+  width = 16,
+  height = 14,
+  units = "in",
+  dpi = 1200
+)
+```
+
+
+Now, LA
+```{r}
+car::Anova(la, type = "III")
+car::Anova(la2, type = "III")
+```
+
+First, salient LA
+```{r}
+#LA binomial
+panel1 <- plot_model(la, type = "pred",  terms = c("sum_SS [all]"), bias_correction = FALSE)
+panel1 <- as.data.frame(panel1$data) %>% 
+  rename("sum_SS" = "x")
+
+panel_a_1 <- ggplot(data = panel1, aes(x = sum_SS, y = predicted))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_x_continuous(labels = function(x) round(exp(x) - 1, digits = 3))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = expression(paste("SS Use (SSC ", km^2, " per person)")),
+    y = "Likelihood of LA Use"
+  )
+
+
+panel3 <- plot_model(la, type = "pred",  terms = c("hdi [all]", "Malaria"), bias_correction = FALSE)
+panel3 <- as.data.frame(panel3$data) %>% 
+  rename("hdi" = "x")
+
+panel_a_3 <- ggplot(data = panel3, aes(x = hdi, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "HDI",
+    y = "Likelihood of LA Use",
+    color = "AnBD\nIncidence\n(per 100k\npeople)",
+    fill = "AnBD\nIncidence\n(per 100k\npeople)"
+  )
+
+panel2 <- plot_model(la, type = "pred",  terms = c("hdi [all]", "newITN"), bias_correction = FALSE)
+panel2 <- as.data.frame(panel2$data) %>% 
+  rename("hdi" = "x")
+
+panel_a_2 <- ggplot(data = panel2, aes(x = hdi, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "HDI",
+    y = "Likelihood of LA Use",
+    color = expression(atop(paste("ITN Use (SSC "), km^2~ "per person)")),
+    fill = expression(atop(paste("ITN Use (SSC "), km^2~ "per person)"))
+  )
+
+panel8 <- plot_model(la, type = "pred",  terms = c("hdi [all]", "sum_RS"), bias_correction = FALSE)
+panel8 <- as.data.frame(panel8$data) %>% 
+  rename("hdi" = "x")
+
+panel_a_8 <- ggplot(data = panel8, aes(x = hdi, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "HDI",
+    y = "Likelihood of LA Use",
+    color = expression(atop(paste("RS Use (SSC "), km^2~ "per person)")),
+    fill = expression(atop(paste("RS Use (SSC "), km^2~ "per person)"))
+  )
+
+
+#LA continuous
+panel4 <- plot_model(la2, type = "pred",  terms = c("Dengue"))
+panel4 <- as.data.frame(panel4$data) %>% 
+  rename("Dengue" = "x")
+
+panel_a_4 <- ggplot(data = panel4, aes(x = Dengue, y = predicted))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_y_continuous(n.breaks = 6,
+  labels = function(x) {
+    val <- round(((exp(x) - .001) / 1000), 1)
+    paste0(val, "k")
+  })+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1))+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = "AeBD Incidence (per 100k people)",
+    y = expression(paste("LA Use (SSC ", km^2, ")"))
+  )
+
+
+
+panel6 <- plot_model(la2, type = "pred",  terms = c("sum_RS", "hdi"))
+panel6 <- as.data.frame(panel6$data) %>% 
+  rename("sum_RS" = "x")
+
+panel_a_6 <- ggplot(data = panel6, aes(x = sum_RS, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1, digits = 3))+
+  scale_y_continuous(n.breaks = 6,
+  labels = function(x) {
+    val <- round(((exp(x) - .001) / 1000), 1)
+    paste0(val, "k")
+  })+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = expression(paste("RS Use (SSC ", km^2, ") per person")),
+    y = expression(paste("LA Use (SSC ", km^2, ")")),
+    color = "HDI",
+    fill = "HDI"
+  )
+
+panel7 <- plot_model(la2, type = "pred",  terms = c("sum_SS", "Malaria"))
+panel7 <- as.data.frame(panel7$data) %>% 
+  rename("sum_SS" = "x")
+
+panel_a_7 <- ggplot(data = panel7, aes(x = sum_SS, y = predicted, color = group))+
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), 
+              alpha = 0.2, 
+              color = NA)+
+  geom_line(linewidth = 1) + 
+  scale_color_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_fill_brewer(palette = "Set2", labels = c("Low", "Average", "High"), guide = guide_legend(reverse = TRUE))+
+  scale_x_continuous(labels = function(x) round(exp(x) - 1, digits = 3))+
+  scale_y_continuous(
+  n.breaks = 4,
+  labels = function(x) {
+    val <- round(((exp(x) - .001) / 1000), 1)
+    labels_vec <- paste0(val, "k")
+    labels_vec[length(labels_vec)] <- ""
+    return(labels_vec)
+  })+
+  theme_minimal() +
+    theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), axis.line = element_line(colour = "black"))+
+  labs(
+    x = expression(paste("SS Use (SSC ", km^2, " per person)")),
+    y = expression(paste("LA Use (SSC ", km^2, ")")),
+    color = "AnBD\nIncidence\n(per 100k\npeople)",
+    fill = "AnBD\nIncidence\n(per 100k\npeople)"
+  )
+
+panel <- cowplot::plot_grid(panel_a_1, panel_a_2, panel_a_8, panel_a_3, panel_a_4, panel_a_6, panel_a_7, ncol =3, align = 'hv', 
+                            labels = "AUTO")
+
+cowplot::ggsave2(
+  filename = "2026_LA_salient.png",
+  plot = panel,
+  width = 16,
+  height = 10,
+  units = "in",
+  dpi = 1200
+)
+
+```

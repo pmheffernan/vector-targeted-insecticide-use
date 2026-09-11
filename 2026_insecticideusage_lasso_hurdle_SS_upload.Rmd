@@ -1,0 +1,459 @@
+---
+title: "2026_insecticideusage_lasso_hurdle_SS"
+output: html_document
+date: "2026-03-25"
+---
+
+```{r}
+library(tidyverse)
+library(DHARMa)
+library(performance)
+library(glmmLasso)
+library(lme4)
+library(sjPlot)
+library(car)
+library(glmmTMB)
+library(caret)
+library(dplyr)
+```
+
+```{r}
+df_ss <- read.csv("2026_insecticideanalyses_upload_csv.csv")%>% 
+  rename(Malaria = Malaria_rate, Dengue = Dengue_rate) %>% 
+  filter(mean_temp > -200)  %>% #removing island countries that ERA5 does not have land data for 
+  mutate(Pop = as.numeric(Pop)) %>% 
+  dplyr::select(Country, newITN, sum_RS, sum_SS, sum_LA, Dengue, Malaria, mean_temp, mean_precip, hdi, Pop, TotalPop) %>% 
+  drop_na()
+
+df_ss$sum_2 <- df_ss$sum_SS 
+
+df_ss$Y = log(df_ss$sum_2 + 0.001)
+
+
+df_ss$Y2 = log((df_ss$sum_2+0.001)/df_ss$TotalPop)
+
+df_ss$Country = as.factor(df_ss$Country)
+
+df_ss$Malaria <- log1p(df_ss$Malaria)
+df_ss$Dengue <- log1p(df_ss$Dengue)
+df_ss$Pop <- log1p(df_ss$Pop)
+df_ss$mean_precip <- log1p(df_ss$mean_precip)
+df_ss$newITN <- log1p(df_ss$newITN/df_ss$TotalPop)
+df_ss$sum_RS <- log1p(df_ss$sum_RS/df_ss$TotalPop)
+df_ss$sum_LA <- log1p(df_ss$sum_LA/df_ss$TotalPop)
+
+df_ss[,c(2:3, 5:11)] <- scale(df_ss[,c(2:3, 5:11)])
+df_ss <- data.frame(df_ss)
+```
+
+1) The binomial model
+Defining the binomial response
+```{r}
+df_ss$SS <- as.integer(df_ss$sum_2 > 0)
+
+family = binomial(link = 'logit')
+```
+
+
+Testing polynomial
+```{r}
+m <- glmmTMB(SS ~ (Malaria + Dengue + mean_temp + mean_precip + hdi + Pop + sum_RS + newITN + sum_LA)^2 + (1|Country),  
+                            family = family, data = df_ss)
+
+m2 <- glmmTMB(SS ~ (Malaria + Dengue + poly(mean_temp, 2) + mean_precip + hdi + Pop + sum_RS + newITN + sum_LA)^2 + (1|Country),  
+                            family = family, data = df_ss)
+
+m3 <- glmmTMB(SS ~ (Malaria + Dengue + mean_temp + poly(mean_precip, 2) + hdi + Pop + sum_RS + newITN + sum_LA)^2 + (1|Country),  
+                            family = family, data = df_ss)
+
+BIC(m, m2, m3)
+```
+
+
+Checking on maximum lambda
+```{r}
+m <- glmmLasso(SS ~ (Malaria + Dengue + mean_temp + mean_precip + hdi + Pop + sum_RS + newITN + sum_LA)^2, rnd = list(Country=~1),  
+                            family = family, data = df_ss, lambda=410, switch.NR = TRUE, final.re = TRUE) 
+summary(m)
+```
+Maximum lambda is 410
+
+
+```{r}
+set.seed(256)
+N<-dim(df_ss)[1]
+ind<-sample(N,N)
+lambda <- exp(seq(log(410), log(410 * .0001), length.out = 200))
+
+kk<-5
+nk <- floor(N/kk)
+
+Devianz_ma<-matrix(Inf,ncol=kk,nrow=length(lambda))
+
+library(MASS);library(nlme)
+PQL <- glmmPQL(SS~ 1,random = ~1|Country,family=family,data=df_ss)
+
+Delta.start <- as.matrix(t(c(as.numeric(PQL$coef$fixed),rep(0,45),as.numeric(t(PQL$coef$random$Country)))))
+Q.start <- as.numeric(VarCorr(PQL)[1,1])
+
+for (i in 1:kk)
+{
+  print(paste("CV Loop ", i,sep=""))
+  
+    if (i < kk)
+    {
+      indi <- ind[(i-1)*nk+(1:nk)]
+    }else{
+      indi <- ind[((i-1)*nk+1):N]
+    }
+    
+    df2.train<-df_ss[-indi,]
+    df2.test<-df_ss[indi,]
+    
+    Delta.start.loop <- Delta.start
+    Q.start.loop <- Q.start
+    
+    for(j in 1:length(lambda))
+    {
+      glm4 <- try(glmmLasso(SS~ (Malaria + Dengue + mean_temp + mean_precip + hdi + Pop + sum_RS + newITN + sum_LA)^2, rnd = list(Country=~1),  
+                            family = family, data = df2.train, lambda=lambda[j], switch.NR=TRUE, final.re=FALSE,
+                            control=list(start=Delta.start.loop, q_start=Q.start.loop)),
+                  silent=TRUE) 
+      
+      if(!inherits(glm4, "try-error"))
+      {  
+        y.hat <- predict(glm4, df2.test, type = "response")
+        
+        
+        Delta.start.loop <- glm4$Deltamatrix[glm4$conv.step,]
+        Q.start.loop <- glm4$Q_long[[glm4$conv.step+1]]
+        
+        Devianz_ma[j,i] <- sum(family$dev.resids(df2.test$SS, y.hat, wt=rep(1, length(y.hat)))) 
+      }
+    }
+}
+
+Devianz_vec<-apply(Devianz_ma,1,sum)
+opt4<-which.min(Devianz_vec)
+
+## now fit full model until optimal lambda
+for(j in 1:opt4)
+{  
+glm4.big <- glmmLasso(SS~ (Malaria + Dengue + mean_temp + mean_precip + hdi + Pop + sum_RS + newITN + sum_LA)^2, rnd = list(Country=~1),  
+                        family = family, data = df_ss, lambda=lambda[j],switch.NR=TRUE,final.re=FALSE,
+                        control=list(start=Delta.start[j,],q_start=Q.start[j]))
+Delta.start<-rbind(Delta.start,glm4.big$Deltamatrix[glm4.big$conv.step,])
+Q.start<-c(Q.start,glm4.big$Q_long[[glm4.big$conv.step+1]])
+}
+
+glm4_final <- glm4.big
+```
+
+
+
+```{r}
+plot(lambda, Devianz_vec,
+     type = "b", 
+     xlab = "Lambda",
+     ylab = "Cross-Validated Deviance",
+     main = "Binomial Model for SS",
+     log = "x"
+)
+
+opt4_lambda <- lambda[opt4]
+points(opt4_lambda, Devianz_vec[opt4], col = "red", pch = 19, cex = 1.5)
+abline(v = opt4_lambda, col = "red", lty = 2)
+text(opt4_lambda, min(Devianz_vec), paste("Optimal Lambda:", round(opt4_lambda, 3)),
+     pos = 4, col = "red")
+```
+Optimal lambda is 5.539
+
+
+
+```{r}
+selected_fixed_effects <- names(glm4_final$coefficients[glm4_final$coefficients != 0])
+selected_fixed_effects <- selected_fixed_effects[-1]
+fixed_formula_selected <- as.formula(paste("SS ~", paste(selected_fixed_effects, collapse = " + "), "+ (1|Country)"))
+
+
+model_refit <- glmmTMB(SS ~ Malaria + Dengue + hdi + Pop + sum_RS + Malaria*Dengue + 
+    Malaria*mean_temp + Malaria*mean_precip + Malaria*hdi + Malaria*sum_RS + 
+    Dengue*mean_precip + Dengue*Pop + Dengue*sum_RS + Dengue*sum_LA + 
+    mean_temp*hdi + mean_temp*Pop + mean_temp*sum_RS + mean_temp*newITN + 
+    mean_precip*hdi + mean_precip*sum_RS + hdi*Pop + hdi*sum_RS + 
+    hdi*newITN + hdi*sum_LA + Pop*sum_RS + Pop*newITN + Pop*sum_LA + 
+    sum_RS*newITN + sum_RS*sum_LA + newITN*sum_LA + (1 | Country), data = df_ss, family = family)
+summary(model_refit)
+car::Anova(model_refit, type = "III")
+
+res <- simulateResiduals(model_refit)
+testResiduals(res)
+```
+
+Repeated k-folds CV:
+```{r}
+library(rsample)
+library(glmmTMB)
+library(performance)
+library(caret)
+
+k <- 5
+n_repeats <- 50
+all_repeats_results <- list()
+
+for (r in 1:n_repeats) {
+  set.seed(859 + r)
+  folds <- createFolds(df_ss$Country, k = k)
+  cv_results <- list()
+
+  for (i in 1:k) {
+    indi <- folds[[i]]
+    test_data <- df_ss[-indi,]
+    train_data <- df_ss[indi,]
+    
+    test_obs <- test_data$SS
+  train_obs <- train_data$SS
+    
+    model_cv <- glmmTMB(
+      SS ~ Malaria + Dengue + hdi + Pop + sum_RS + Malaria*Dengue + 
+    Malaria*mean_temp + Malaria*mean_precip + Malaria*hdi + Malaria*sum_RS + 
+    Dengue*mean_precip + Dengue*Pop + Dengue*sum_RS + Dengue*sum_LA + 
+    mean_temp*hdi + mean_temp*Pop + mean_temp*sum_RS + mean_temp*newITN + 
+    mean_precip*hdi + mean_precip*sum_RS + hdi*Pop + hdi*sum_RS + 
+    hdi*newITN + hdi*sum_LA + Pop*sum_RS + Pop*newITN + Pop*sum_LA + 
+    sum_RS*newITN + sum_RS*sum_LA + newITN*sum_LA + (1 | Country),
+      family = family,
+      data = train_data)
+    
+    test_pred <- predict(model_cv, newdata = test_data, type = "response", allow.new.levels = TRUE)
+    train_pred <- predict(model_cv, newdata = train_data, type = "response")
+    
+    test_r2 <- cor(test_pred, test_obs, use = "complete.obs")^2
+    train_r2 <- cor(train_pred, train_obs, use = "complete.obs")^2
+    
+    test_auc <- as.numeric(pROC::roc(test_obs, test_pred, quiet = TRUE)$auc)
+  train_auc <- as.numeric(pROC::roc(train_obs, train_pred, quiet = TRUE)$auc)
+    
+    cv_results[[i]] <- data.frame(
+      Repeat = r,
+      Fold = i,
+      Test_R2 = as.numeric(test_r2),
+      Train_R2 = as.numeric(train_r2),
+      Test_AUC = test_auc,
+      Train_AUC = train_auc
+    )
+  }
+  
+  all_repeats_results[[r]] <- do.call(rbind, cv_results)
+}
+
+final_summary <- do.call(rbind, all_repeats_results)
+
+grand_summary <- final_summary %>%
+  summarise(
+    Mean_Test_R2 = mean(Test_R2, na.rm = TRUE),
+    SD_Test_R2 = sd(Test_R2, na.rm = TRUE),
+    Mean_Train_R2 = mean(Train_R2, na.rm = TRUE),
+    Mean_Test_AUC = mean(Test_AUC, na.rm = TRUE),
+    Mean_Train_AUC = mean(Train_AUC, na.rm = TRUE)
+  )
+
+print(grand_summary)
+```
+2) The Continuous Model
+
+```{r}
+df_ss <- df_ss %>% 
+  filter(SS == 1) %>% 
+  droplevels()
+```
+
+```{r}
+
+family = gaussian(link = "identity")
+```
+
+Testing polynomial
+```{r}
+m <- glmmTMB(log(sum_2 + 0.001) ~ (Malaria + Dengue + mean_temp + mean_precip + hdi + Pop + sum_RS + newITN + sum_LA)^2 + (1|Country) + offset(log(TotalPop)),  
+                            family = family, data = df_ss)
+
+m2 <- glmmTMB(log(sum_2 + 0.001) ~ (Malaria + Dengue + poly(mean_temp, 2) + mean_precip + hdi + Pop + sum_RS + newITN + sum_LA)^2 + (1|Country)+ offset(log(TotalPop)),  
+                            family = family, data = df_ss)
+
+m3 <- glmmTMB(log(sum_2 + 0.001) ~ (Malaria + Dengue + mean_temp + poly(mean_precip, 2) + hdi + Pop + sum_RS + newITN + sum_LA)^2 + (1|Country)+ offset(log(TotalPop)),  
+                            family = family, data = df_ss)
+
+BIC(m, m2, m3)
+```
+Checking on maximum lambda
+```{r}
+m <- glmmLasso(Y2 ~ (Malaria + Dengue + mean_temp + mean_precip + hdi + Pop + sum_RS + newITN + sum_LA)^2, rnd = list(Country=~1),  
+                            family = family, data = df_ss, lambda=635, switch.NR = TRUE, final.re = TRUE) 
+summary(m)
+```
+Max lambda is 635
+
+```{r}
+set.seed(34)
+N<-dim(df_ss)[1]
+ind<-sample(N,N)
+lambda <- exp(seq(log(635), log(635 * .0001), length.out = 200))
+
+kk<-5
+nk <- floor(N/kk)
+
+Devianz_ma<-matrix(Inf,ncol=kk,nrow=length(lambda))
+
+library(MASS);library(nlme)
+PQL <- glmmPQL(Y2~ 1,random = ~1|Country,family=family,data=df_ss)
+
+Delta.start <- as.matrix(t(c(as.numeric(PQL$coef$fixed),rep(0,45),as.numeric(t(PQL$coef$random$Country)))))
+Q.start <- as.numeric(VarCorr(PQL)[1,1])
+
+for (i in 1:kk)
+{
+  print(paste("CV Loop ", i,sep=""))
+  
+    if (i < kk)
+    {
+      indi <- ind[(i-1)*nk+(1:nk)]
+    }else{
+      indi <- ind[((i-1)*nk+1):N]
+    }
+    
+    df2.train<-df_ss[-indi,]
+    df2.test<-df_ss[indi,]
+    
+    Delta.start.loop <- Delta.start
+    Q.start.loop <- Q.start
+    
+    for(j in 1:length(lambda))
+    {
+      glm4 <- try(glmmLasso(Y2~(Malaria + Dengue + mean_temp + mean_precip + hdi + Pop + sum_RS + newITN + sum_LA)^2, rnd = list(Country=~1),  
+                            family = family, data = df2.train, lambda=lambda[j], switch.NR=TRUE, final.re=TRUE,
+                            control=list(start=Delta.start.loop, q_start=Q.start.loop)),
+                  silent=TRUE) 
+      
+      if(!inherits(glm4, "try-error"))
+      {  
+        y.hat <- predict(glm4, df2.test)
+        
+        
+        Delta.start.loop <- glm4$Deltamatrix[glm4$conv.step,]
+        Q.start.loop <- glm4$Q_long[[glm4$conv.step+1]]
+        
+        Devianz_ma[j,i] <- sum(family$dev.resids(df2.test$Y2, y.hat, wt=rep(1, length(y.hat)))) 
+      }
+    }
+}
+
+Devianz_vec<-apply(Devianz_ma,1,sum)
+opt4<-which.min(Devianz_vec)
+
+## now fit full model until optimal lambda
+for(j in 1:opt4)
+{  
+glm4.big <- glmmLasso(Y2~(Malaria + Dengue + mean_temp + mean_precip + hdi + Pop + sum_RS + newITN + sum_LA)^2, rnd = list(Country=~1),  
+                        family = family, data = df_ss, lambda=lambda[j],switch.NR=TRUE,final.re=TRUE,
+                        control=list(start=Delta.start[j,],q_start=Q.start[j]))
+Delta.start<-rbind(Delta.start,glm4.big$Deltamatrix[glm4.big$conv.step,])
+Q.start<-c(Q.start,glm4.big$Q_long[[glm4.big$conv.step+1]])
+}
+
+glm4_final <- glm4.big
+
+
+```
+
+```{r}
+plot(lambda, Devianz_vec,
+     type = "b", 
+     xlab = "Lambda",
+     ylab = "Cross-Validated Deviance",
+     main = "Cross-Validation Deviance vs. Lambda",
+     log = "x"
+)
+
+opt4_lambda <- lambda[opt4]
+points(opt4_lambda, Devianz_vec[opt4], col = "red", pch = 19, cex = 1.5)
+abline(v = opt4_lambda, col = "red", lty = 2)
+text(opt4_lambda, min(Devianz_vec), paste("Optimal Lambda:", round(opt4_lambda, 3)),
+     pos = 4, col = "red")
+
+```
+Optimal lambda is 52.161
+
+Plot this model
+```{r}
+selected_fixed_effects <- names(glm4_final$coefficients[glm4_final$coefficients != 0])
+selected_fixed_effects <- selected_fixed_effects[-1]
+fixed_formula_selected <- as.formula(paste("Y2 ~", paste(selected_fixed_effects, collapse = " + "), "+ (1|Country)"))
+
+model_refit <- glmmTMB(log(sum_2+0.001) ~ Malaria*Dengue + Dengue*hdi + mean_precip*sum_LA + Pop*sum_LA + (1 | Country) + offset(log(TotalPop)), data = df_ss, family = family)
+
+summary(model_refit)
+car::Anova(model_refit, type = "III")
+
+res <- DHARMa::simulateResiduals(model_refit)
+testResiduals(res)
+```
+
+Repeated k-folds CV:
+```{r}
+library(rsample)
+library(glmmTMB)
+library(performance)
+library(caret)
+
+k <- 5
+n_repeats <- 50
+all_repeats_results <- list()
+
+for (r in 1:n_repeats) {
+  set.seed(13 + r)
+  folds <- createFolds(df_ss$Country, k = k)
+  cv_results <- list()
+
+    for (i in 1:k) {
+
+    indi <- folds[[i]]
+    test_data <- df_ss[-indi,]
+    train_data <- df_ss[indi,]
+    
+        model_cv <- glmmTMB(
+      log(sum_2+0.001) ~ Malaria*Dengue + Dengue*hdi + mean_precip*sum_LA + Pop*sum_LA + (1 | Country) + offset(log(TotalPop)),
+      family = family,
+      data = train_data)
+    
+    test_pred <- predict(model_cv, newdata = test_data, type = "response", allow.new.levels = TRUE)
+    train_pred <- predict(model_cv, newdata = train_data, type = "response")
+    
+    test_r2 <- cor(test_pred, log(test_data$sum_2 + 0.001), use = "complete.obs")^2
+    train_r2 <- cor(train_pred, log(train_data$sum_2 + 0.001), use = "complete.obs")^2
+    
+    r2_vals <- performance::r2(model_cv)
+    
+    cv_results[[i]] <- data.frame(
+      Repeat = r,
+      Fold = i,
+      Test_R2 = as.numeric(test_r2),
+      Train_R2 = as.numeric(train_r2)
+    )
+  }
+  
+  all_repeats_results[[r]] <- do.call(rbind, cv_results)
+}
+
+final_summary <- do.call(rbind, all_repeats_results)
+
+grand_summary <- final_summary %>%
+  summarise(
+    Mean_Test_R2 = mean(Test_R2, na.rm = TRUE),
+    SD_Test_R2 = sd(Test_R2, na.rm = TRUE),
+    Mean_Train_R2 = mean(Train_R2, na.rm = TRUE)
+  )
+
+print(grand_summary)
+```
+
